@@ -59,7 +59,18 @@ ComboBox {
                 id: filter;
                 objectName: "cameraSelectorFilter";
                 width: parent.width;
-                placeholderText: qsTr("Search...");
+                // Keep the hint inside the compact field on every Qt Controls style.
+                placeholderText: "";
+                BasicText {
+                    anchors.fill: parent;
+                    anchors.leftMargin: filter.leftPadding;
+                    anchors.rightMargin: filter.rightPadding;
+                    text: qsTr("Search...");
+                    color: filter.placeholderTextColor;
+                    verticalAlignment: Text.AlignVCenter;
+                    elide: Text.ElideRight;
+                    visible: filter.text.length === 0;
+                }
                 Accessible.name: qsTr("Search %1").arg(control.fieldLabel);
                 onTextChanged: options.currentIndex = 0;
                 Keys.onReturnPressed: control.choose(choices.filteredIndices[options.currentIndex] ?? -1);
