@@ -387,9 +387,11 @@ MenuItem {
     }
 
     function exportProfile(fileUrl: url, notify: bool): void {
+        if (!calib.validateProfileMetadata()) return;
+        const metadata = JSON.parse(JSON.stringify(calib.calibrationInfo));
         const save = (upload) => {
             // `export_lens_profile` reports failures itself, via `error()` -> a message box
-            if (controller.export_lens_profile(fileUrl, calib.calibrationInfo, upload) && notify)
+            if (controller.export_lens_profile(fileUrl, metadata, upload) && notify)
                 calibrator_window.showNotification(Modal.Info, qsTr("Lens profile exported to %1.").arg("<b>" + filesystem.display_url(fileUrl) + "</b>"));
         };
         if (uploadProfile.checked && uploadProfile.enabled) {
@@ -506,58 +508,76 @@ MenuItem {
 
     Grid {
         width: parent.width;
-        columns: window.isMobileLayout? 1 : 3;
+        columns: width >= 600 * dpiScale? 3 : 1;
         columnSpacing: 5 * dpiScale;
-        rowSpacing: 5 * dpiScale;
+        rowSpacing: 8 * dpiScale;
 
-        ComboBox {
-            id: cameraBrand;
-            model: calib.cameraBrandModel;
-            width: window.isMobileLayout? parent.width : (parent.width - 10 * dpiScale) / 3;
-            font.pixelSize: 12 * dpiScale;
-            popup.x: calib.selectorPopupX(cameraBrand);
-            popup.width: calib.selectorPopupWidth(cameraBrand);
-            popup.height: Math.min(popup.implicitHeight, 8 * itemHeight + 4 * dpiScale);
-            onCurrentIndexChanged: {
-                if (calib.metadataControlsReady && !calib.updatingCameraSelectors) {
-                    list.commitAll();
-                    calib.setMetadataField("camera_brand", "Camera brand", calib.selectorValue(cameraBrand));
-                    calib.setMetadataField("camera_model", "Camera model", "");
-                    calib.setMetadataField("lens_model", "Lens model", "");
-                    calib.refreshCameraModels();
+        Label {
+            text: qsTr("Camera brand");
+            width: (parent.width - (parent.columns - 1) * parent.columnSpacing) / parent.columns;
+            spacing: 4 * dpiScale;
+            CameraSelector {
+                id: cameraBrand;
+                model: calib.cameraBrandModel;
+                width: parent.width;
+                font.pixelSize: 12 * dpiScale;
+                fieldLabel: qsTr("Camera brand");
+                popup.x: calib.selectorPopupX(cameraBrand);
+                popup.width: calib.selectorPopupWidth(cameraBrand);
+                popup.height: popup.implicitHeight;
+                onCurrentIndexChanged: {
+                    if (calib.metadataControlsReady && !calib.updatingCameraSelectors) {
+                        list.commitAll();
+                        calib.setMetadataField("camera_brand", "Camera brand", calib.selectorValue(cameraBrand));
+                        calib.setMetadataField("camera_model", "Camera model", "");
+                        calib.setMetadataField("lens_model", "Lens model", "");
+                        calib.refreshCameraModels();
+                    }
                 }
             }
         }
-        ComboBox {
-            id: cameraModel;
-            model: calib.cameraModelModel;
-            width: window.isMobileLayout? parent.width : (parent.width - 10 * dpiScale) / 3;
-            font.pixelSize: 12 * dpiScale;
-            popup.x: calib.selectorPopupX(cameraModel);
-            popup.width: calib.selectorPopupWidth(cameraModel);
-            popup.height: Math.min(popup.implicitHeight, 8 * itemHeight + 4 * dpiScale);
-            onCurrentIndexChanged: {
-                if (calib.metadataControlsReady && !calib.updatingCameraSelectors) {
-                    list.commitAll();
-                    calib.setMetadataField("camera_model", "Camera model", calib.selectorValue(cameraModel));
-                    calib.setMetadataField("lens_model", "Lens model", "");
-                    calib.refreshCameraLenses();
-                    calib.updateCropFromCamera();
+        Label {
+            text: qsTr("Camera model");
+            width: (parent.width - (parent.columns - 1) * parent.columnSpacing) / parent.columns;
+            spacing: 4 * dpiScale;
+            CameraSelector {
+                id: cameraModel;
+                model: calib.cameraModelModel;
+                width: parent.width;
+                font.pixelSize: 12 * dpiScale;
+                fieldLabel: qsTr("Camera model");
+                popup.x: calib.selectorPopupX(cameraModel);
+                popup.width: calib.selectorPopupWidth(cameraModel);
+                popup.height: popup.implicitHeight;
+                onCurrentIndexChanged: {
+                    if (calib.metadataControlsReady && !calib.updatingCameraSelectors) {
+                        list.commitAll();
+                        calib.setMetadataField("camera_model", "Camera model", calib.selectorValue(cameraModel));
+                        calib.setMetadataField("lens_model", "Lens model", "");
+                        calib.refreshCameraLenses();
+                        calib.updateCropFromCamera();
+                    }
                 }
             }
         }
-        ComboBox {
-            id: cameraLens;
-            model: calib.cameraLensModel;
-            width: window.isMobileLayout? parent.width : (parent.width - 10 * dpiScale) / 3;
-            font.pixelSize: 12 * dpiScale;
-            popup.x: calib.selectorPopupX(cameraLens);
-            popup.width: calib.selectorPopupWidth(cameraLens);
-            popup.height: Math.min(popup.implicitHeight, 8 * itemHeight + 4 * dpiScale);
-            onCurrentIndexChanged: {
-                if (calib.metadataControlsReady && !calib.updatingCameraSelectors) {
-                    list.commitAll();
-                    calib.setMetadataField("lens_model", "Lens model", calib.selectorValue(cameraLens));
+        Label {
+            text: qsTr("Lens model");
+            width: (parent.width - (parent.columns - 1) * parent.columnSpacing) / parent.columns;
+            spacing: 4 * dpiScale;
+            CameraSelector {
+                id: cameraLens;
+                model: calib.cameraLensModel;
+                width: parent.width;
+                font.pixelSize: 12 * dpiScale;
+                fieldLabel: qsTr("Lens model");
+                popup.x: calib.selectorPopupX(cameraLens);
+                popup.width: calib.selectorPopupWidth(cameraLens);
+                popup.height: popup.implicitHeight;
+                onCurrentIndexChanged: {
+                    if (calib.metadataControlsReady && !calib.updatingCameraSelectors) {
+                        list.commitAll();
+                        calib.setMetadataField("lens_model", "Lens model", calib.selectorValue(cameraLens));
+                    }
                 }
             }
         }

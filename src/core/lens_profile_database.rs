@@ -376,7 +376,9 @@ impl LensProfileDatabase {
             Self::compare_ui_items(a, b, favorites, aspect_ratio, aspect_ratio_swapped)
         });
 
-        filtered.into_iter().take(200).cloned().collect()
+        // A selected setup is also the review list; do not silently omit its profiles.
+        let limit = if model_key.is_empty() { 200 } else { usize::MAX };
+        filtered.into_iter().take(limit).cloned().collect()
     }
 
     fn normalize_search_text(text: &str) -> String {
@@ -648,6 +650,20 @@ mod tests {
 
     fn item(name: &str, path: &str, checksum: &str) -> LensProfileUiItem {
         (name.to_owned(), path.to_owned(), checksum.to_owned(), false, 0.0, 0, String::new())
+    }
+
+    #[test]
+    fn selected_setup_review_includes_every_matching_profile() {
+        let mut db = LensProfileDatabase::default();
+        for i in 0..205 {
+            let path = format!("profile-{i}");
+            db.map.insert(path.clone(), profile("Maker", "Body", "Prime", &path));
+            db.list_for_ui.push(item("Maker Body Prime", &path, &path));
+        }
+        let selected = HashSet::from([("maker".to_owned(), "body".to_owned())]);
+        assert_eq!(db.search_by_camera(
+            "Maker", "Body", "Prime", "", &selected, &HashSet::new(), &HashSet::new(), &HashSet::new(), 0, 0
+        ).len(), 205);
     }
 
     #[test]

@@ -53,7 +53,7 @@ pub struct Controller {
     load_video: qt_method!(fn(&self, url: QUrl, player: QJSValue)),
     video_file_loaded: qt_method!(fn(&self, player: QJSValue)),
     load_telemetry: qt_method!(fn(&self, url: QUrl, is_video: bool, player: QJSValue, sample_index: i32, project_version: u32)),
-    load_lens_profile: qt_method!(fn(&mut self, url_or_id: QString)),
+    load_lens_profile: qt_method!(fn(&mut self, url_or_id: QString) -> bool),
     reset_lens_profile: qt_method!(fn(&mut self)),
     get_preset_contents: qt_method!(fn(&mut self, url_or_id: QString) -> QString),
     export_lens_profile: qt_method!(fn(&mut self, url: QUrl, info: QJsonObject, upload: bool) -> bool),
@@ -899,11 +899,11 @@ impl Controller {
             }
         }
     }
-    fn load_lens_profile(&mut self, url_or_id: QString) {
+    fn load_lens_profile(&mut self, url_or_id: QString) -> bool {
         let (json, filepath, checksum) = {
             if let Err(e) = self.stabilizer.load_lens_profile(&url_or_id.to_string()) {
                 self.error(QString::from("An error occured: %1"), QString::from(e.to_string()), QString::default());
-                return;
+                return false;
             }
             let lens = self.stabilizer.lens.read();
             (lens.get_json().unwrap_or_default(), lens.path_to_file.clone(), lens.checksum.clone().unwrap_or_default())
@@ -912,6 +912,7 @@ impl Controller {
         self.lens_changed();
         self.lens_profile_loaded(QString::from(json), QString::from(filepath), QString::from(checksum));
         self.request_recompute();
+        true
     }
     /// Drops the lens geometry, keeping the settings that don't come from the profile itself (stretch, digital lens)
     fn reset_lens_profile(&mut self) {
@@ -2102,6 +2103,8 @@ impl Controller {
 
         let db_path = LensProfileDatabase::get_path().join("profiles.cbor.gz");
         let camera_db_path = CameraDatabase::get_path();
+        let camera_needs_update = std::fs::read_to_string(&camera_db_path).ok()
+            .and_then(|data| CameraDatabase::parse_file(&data).ok()).is_none();
         if db_path.exists() || gyroflow_core::settings::data_dir().join("lens_profiles").exists() {
             core::run_threaded(move || {
                 if let Ok(Ok(body)) = ureq::get("https://api.github.com/repos/gyroflow/lens_profiles/releases").call().map(|x| x.into_body().read_to_string()) {
@@ -2110,7 +2113,7 @@ impl Controller {
                         if let Some(obj) = v.first() {
                             let obj = obj.as_object()?;
                             if let Ok(tag) = obj.get("tag_name")?.as_str()?.trim_start_matches("v").parse::<u32>() {
-                                if tag > current_version {
+                                if tag > current_version || (tag == current_version && camera_needs_update) {
                                     ::log::info!("Updating lens profile database from v{current_version} to v{tag}.");
                                     let assets = obj.get("assets")?.as_array()?;
                                     let asset_url = |name: &str| {
@@ -2120,48 +2123,32 @@ impl Controller {
                                     };
                                     let download_to = |url: &str, path: &std::path::Path| -> bool {
                                         (|| -> Result<(), Box<dyn std::error::Error>> {
-                                            use std::io::{Read, Seek, SeekFrom, Write};
-                                            let parent = path.parent().ok_or("Missing database directory")?;
-                                            std::fs::create_dir_all(parent)?;
-                                            let mut content = ureq::get(url).call()?.into_body().into_reader();
-                                            let mut file = tempfile::NamedTempFile::new_in(parent)?;
-                                            std::io::copy(&mut content, &mut file)?;
-                                            file.flush()?;
-                                            file.seek(SeekFrom::Start(0))?;
-                                            if path.file_name().and_then(|x| x.to_str()) == Some("camera_database.json") {
-                                                let mut data = String::new();
-                                                file.read_to_string(&mut data)?;
-                                                CameraDatabase::parse_file(&data)?;
+                                            use core::database_update::{install, DatabaseFormat};
+                                            let content = ureq::get(url).call()?.into_body().into_reader();
+                                            let format = if path.file_name().and_then(|x| x.to_str()) == Some("camera_database.json") {
+                                                DatabaseFormat::Cameras
                                             } else {
-                                                // Reading to EOF checks the gzip footer and catches truncated transfers.
-                                                let mut decoder = flate2::read::GzDecoder::new(file.as_file_mut());
-                                                std::io::copy(&mut decoder, &mut std::io::sink())?;
-                                            }
-                                            file.as_file().sync_all()?;
-                                            file.persist(path)?;
+                                                DatabaseFormat::Profiles
+                                            };
+                                            install(content, path, format)?;
                                             Ok(())
                                         })().map_err(|e| ::log::warn!("Database update failed: {e}")).is_ok()
                                     };
 
-                                    if let Some(download_url) = asset_url("profiles.cbor.gz") {
-                                        let mut updated = false;
-                                        if db_path.exists() {
-                                            if download_to(download_url, &db_path) {
-                                                updated = true;
-                                                update(());
-                                            }
-                                        }
-                                        if !updated {
-                                            if download_to(download_url, &gyroflow_core::settings::data_dir().join("lens_profiles").join("profiles.cbor.gz")) {
-                                                update(());
-                                            }
-                                        }
-                                    }
+                                    let mut updated = false;
+                                    // Install the catalogue first. If it fails, leave the profile version
+                                    // unchanged so a subsequent launch retries the whole release.
                                     if let Some(download_url) = asset_url("camera_database.json") {
-                                        if download_to(download_url, &camera_db_path) {
-                                            update(());
+                                        if !download_to(download_url, &camera_db_path) { return None; }
+                                        updated = true;
+                                    }
+                                    if tag > current_version {
+                                        if let Some(download_url) = asset_url("profiles.cbor.gz") {
+                                            let installed = db_path.exists() && download_to(download_url, &db_path);
+                                            updated |= installed || download_to(download_url, &gyroflow_core::settings::data_dir().join("lens_profiles").join("profiles.cbor.gz"));
                                         }
                                     }
+                                    if updated { update(()); }
                                 }
                             }
                         }

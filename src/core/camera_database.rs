@@ -90,6 +90,10 @@ impl CameraDatabase {
             Self::bundled_file()
         };
 
+        Self::from_file(file)
+    }
+
+    fn from_file(file: CameraDatabaseFile) -> Self {
         let mut db = Self::empty();
         for camera in file.cameras {
             db.merge_camera(camera);
@@ -565,7 +569,7 @@ mod tests {
 
     #[test]
     fn static_database_loads() {
-        let db = CameraDatabase::from_static();
+        let db = CameraDatabase::from_file(CameraDatabase::bundled_file());
         assert!(db.brands().len() > 10);
         assert!(db.models.values().any(|models| models.len() > 10));
         assert!(db.lenses.values().any(|lenses| lenses.len() > 10));
@@ -573,7 +577,7 @@ mod tests {
 
     #[test]
     fn model_indexes_are_scoped_to_their_brand() {
-        let db = CameraDatabase::from_static();
+        let db = CameraDatabase::from_file(CameraDatabase::bundled_file());
         for brand in db.brands() {
             let brand_key = CameraDatabase::key(&brand);
             for model in db.models(&brand) {
@@ -586,7 +590,7 @@ mod tests {
 
     #[test]
     fn mount_based_cameras_expose_lens_options() {
-        let db = CameraDatabase::from_static();
+        let db = CameraDatabase::from_file(CameraDatabase::bundled_file());
         let mut checked = 0;
 
         for camera in db.cameras.values() {

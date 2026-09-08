@@ -471,26 +471,33 @@ MenuItem {
 
         if (root.presetLoadBusy) {
             root.queuedProfileLoad = item;
-            controller.cancel_current_operation();
             return;
         }
 
         const lensPathOrId = item[1];
         root.activeProfileLoad = { "file": lensPathOrId, "checksum": item[2] };
         profileLoadExpiry.restart();
-        if (lensPathOrId.endsWith(".gyroflow")) {
-            root.presetLoadBusy = true;
-            const accepted = window.videoArea.loadGyroflowData(JSON.parse(controller.get_preset_contents(lensPathOrId)), 0);
-            if (!accepted) {
-                root.presetLoadBusy = false;
-                root.activeProfileLoad = null;
-                profileLoadExpiry.stop();
+        let accepted = false;
+        try {
+            if (lensPathOrId.endsWith(".gyroflow")) {
+                const contents = JSON.parse(controller.get_preset_contents(lensPathOrId));
+                root.presetLoadBusy = true;
+                accepted = window.videoArea.loadGyroflowData(contents, 0);
+            } else {
+                root.selected_manually = true;
+                accepted = controller.load_lens_profile(lensPathOrId);
             }
-        } else {
-            root.selected_manually = true;
-            controller.load_lens_profile(lensPathOrId);
+        } catch (error) {
+            console.warn("Unable to load lens preset:", error);
+            messageBox(Modal.Error, qsTr("Unable to load this lens preset."), [ { text: qsTr("Ok") } ]);
+        }
+        if (!accepted) {
+            root.presetLoadBusy = false;
+            root.activeProfileLoad = null;
+            profileLoadExpiry.stop();
         }
     }
+
     function reviewRelative(step: int): void {
         if (!reviewProfiles.length) {
             return;
@@ -506,45 +513,63 @@ MenuItem {
 
     Grid {
         width: parent.width;
-        columns: window.isMobileLayout? 1 : 3;
+        columns: width >= 600 * dpiScale? 3 : 1;
         columnSpacing: 5 * dpiScale;
-        rowSpacing: 5 * dpiScale;
+        rowSpacing: 8 * dpiScale;
 
-        ComboBox {
-            id: cameraBrand;
-            model: root.cameraBrandModel;
-            width: window.isMobileLayout? parent.width : (parent.width - 10 * dpiScale) / 3;
-            font.pixelSize: 12 * dpiScale;
-            popup.x: root.selectorPopupX(cameraBrand);
-            popup.width: root.selectorPopupWidth(cameraBrand);
-            popup.height: Math.min(popup.implicitHeight, 8 * itemHeight + 4 * dpiScale);
-            onActivated: {
-                root.refreshCameraModels();
-                root.updateCameraSearch();
+        Label {
+            text: qsTr("Camera brand");
+            width: (parent.width - (parent.columns - 1) * parent.columnSpacing) / parent.columns;
+            spacing: 4 * dpiScale;
+            CameraSelector {
+                id: cameraBrand;
+                model: root.cameraBrandModel;
+                width: parent.width;
+                font.pixelSize: 12 * dpiScale;
+                fieldLabel: qsTr("Camera brand");
+                popup.x: root.selectorPopupX(cameraBrand);
+                popup.width: root.selectorPopupWidth(cameraBrand);
+                popup.height: popup.implicitHeight;
+                onActivated: {
+                    root.refreshCameraModels();
+                    root.updateCameraSearch();
+                }
             }
         }
-        ComboBox {
-            id: cameraModel;
-            model: root.cameraModelModel;
-            width: window.isMobileLayout? parent.width : (parent.width - 10 * dpiScale) / 3;
-            font.pixelSize: 12 * dpiScale;
-            popup.x: root.selectorPopupX(cameraModel);
-            popup.width: root.selectorPopupWidth(cameraModel);
-            popup.height: Math.min(popup.implicitHeight, 8 * itemHeight + 4 * dpiScale);
-            onActivated: {
-                root.refreshCameraLenses();
-                root.updateCameraSearch();
+        Label {
+            text: qsTr("Camera model");
+            width: (parent.width - (parent.columns - 1) * parent.columnSpacing) / parent.columns;
+            spacing: 4 * dpiScale;
+            CameraSelector {
+                id: cameraModel;
+                model: root.cameraModelModel;
+                width: parent.width;
+                font.pixelSize: 12 * dpiScale;
+                fieldLabel: qsTr("Camera model");
+                popup.x: root.selectorPopupX(cameraModel);
+                popup.width: root.selectorPopupWidth(cameraModel);
+                popup.height: popup.implicitHeight;
+                onActivated: {
+                    root.refreshCameraLenses();
+                    root.updateCameraSearch();
+                }
             }
         }
-        ComboBox {
-            id: cameraLens;
-            model: root.cameraLensModel;
-            width: window.isMobileLayout? parent.width : (parent.width - 10 * dpiScale) / 3;
-            font.pixelSize: 12 * dpiScale;
-            popup.x: root.selectorPopupX(cameraLens);
-            popup.width: root.selectorPopupWidth(cameraLens);
-            popup.height: Math.min(popup.implicitHeight, 8 * itemHeight + 4 * dpiScale);
-            onActivated: root.updateCameraSearch();
+        Label {
+            text: qsTr("Lens model");
+            width: (parent.width - (parent.columns - 1) * parent.columnSpacing) / parent.columns;
+            spacing: 4 * dpiScale;
+            CameraSelector {
+                id: cameraLens;
+                model: root.cameraLensModel;
+                width: parent.width;
+                font.pixelSize: 12 * dpiScale;
+                fieldLabel: qsTr("Lens model");
+                popup.x: root.selectorPopupX(cameraLens);
+                popup.width: root.selectorPopupWidth(cameraLens);
+                popup.height: popup.implicitHeight;
+                onActivated: root.updateCameraSearch();
+            }
         }
     }
     BasicText {
