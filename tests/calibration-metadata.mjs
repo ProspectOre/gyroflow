@@ -16,7 +16,7 @@ function validate({brand='Sony', model='New model', lens='24–70mm', focal=35, 
             camera_database_resolve_model: () => '',
             camera_database_lenses: () => ['24–70mm']
         },
-        list: {commitAll() {}}, uploadProfile:{checked:upload}, cameraBrand:{currentIndex:1},
+        list: {commitAll() {}}, uploadProfile:{checked:upload,enabled:true}, cameraBrand:{currentIndex:1},
         cameraModel:{currentIndex:modelIndex}, cameraLens:{currentIndex:lensIndex},
         flcb:{checked:focal>0}, qsTr:s=>s, Modal:{Error:1}, messageBox() {}
     });
