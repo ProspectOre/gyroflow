@@ -107,9 +107,24 @@ MenuItem {
                 controller.request_profile_ratings();
             }
 
+            const previous = {
+                brand: selectorValue(cameraBrand),
+                model: selectorValue(cameraModel),
+                lens: selectorValue(cameraLens)
+            };
+            const firstLoad = !lensProfilesListPrepared;
             lensProfilesListPrepared = true;
             root.refreshCameraBrands();
-            root.applyDetectedCamera();
+            if (firstLoad) {
+                root.applyDetectedCamera();
+            } else {
+                setSelectorValue(cameraBrand, previous.brand);
+                root.refreshCameraModels();
+                setSelectorValue(cameraModel, previous.model);
+                root.refreshCameraLenses();
+                setSelectorValue(cameraLens, previous.lens);
+                root.searchProfiles();
+            }
 
             root.loadFavorites();
             if (!root.fetched_from_github) {
@@ -136,7 +151,8 @@ MenuItem {
         }
         function onSearch_lens_profile_finished(profiles: list<var>): void {
             root.reviewProfiles = profiles;
-            root.reviewIndex = -1;
+            root.reviewIndex = profiles.findIndex(item =>
+                item[1] === root.profilePath || (!!root.profileChecksum && item[2] === root.profileChecksum));
         }
         function onGyroflow_file_loaded(obj: var): void {
             if (!root.presetLoadBusy) return;
@@ -576,6 +592,16 @@ MenuItem {
             rightPadding: 5 * dpiScale;
             enabled: !!(root.profileChecksum || root.profilePath);
             onClicked: root.rejectCurrentProfile(false);
+        }
+    }
+    Button {
+        visible: Object.keys(root.rejectedProfiles).length > 0;
+        anchors.horizontalCenter: parent.horizontalCenter;
+        text: qsTr("Restore hidden profiles");
+        onClicked: {
+            root.rejectedProfiles = {};
+            root.updateRejectedProfiles();
+            root.searchProfiles();
         }
     }
     Row {

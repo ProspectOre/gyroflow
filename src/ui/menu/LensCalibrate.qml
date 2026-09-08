@@ -213,7 +213,7 @@ MenuItem {
         }
 
         const fixedLensBrands = ["GoPro", "DJI", "Insta360", "RunCam", "Caddx", "Foxeer", "Garmin", "SJCam", "AEE"];
-        return fixedLensBrands.indexOf(brand) === -1 && !calib.calibrationInfo.camera_setting;
+        return fixedLensBrands.indexOf(brand) === -1;
     }
     function cameraIsKnown(brand: string, model: string): bool {
         return !!controller.camera_database_resolve_model(brand, model);
@@ -227,7 +227,7 @@ MenuItem {
         const needle = lens.toLowerCase();
         for (const item of lenses) {
             const value = item.toLowerCase();
-            if (value === needle || value.indexOf(needle) >= 0 || needle.indexOf(value) >= 0) {
+            if (value === needle) {
                 return true;
             }
         }
@@ -246,14 +246,14 @@ MenuItem {
 
         if (!brand) errors.push(qsTr("Camera brand is required."));
         if (!model) errors.push(qsTr("Camera model is required."));
-        if (brand && model && !cameraIsKnown(brand, model) && (cameraBrand.currentIndex > 0 || cameraModel.currentIndex > 0)) {
+        if (brand && model && !cameraIsKnown(brand, model) && cameraModel.currentIndex > 0) {
             errors.push(qsTr("Select Other before entering a camera that is not in the list."));
         }
         if (brand && model && !lens && cameraNeedsLens(brand, model)) errors.push(qsTr("Lens model is required for this camera."));
         if (brand && model && lens && !lensIsKnown(brand, model, lens) && cameraLens.currentIndex > 0) {
             errors.push(qsTr("Select Other before entering a lens that is not in the list."));
         }
-        if (lens && /[0-9]+(\.[0-9]+)?\s*-\s*[0-9]+(\.[0-9]+)?\s*mm/i.test(lens) && (!flcb.checked || !(+calib.calibrationInfo.focal_length > 0))) {
+        if (lens && /[0-9]+(\.[0-9]+)?\s*[-–—]\s*[0-9]+(\.[0-9]+)?\s*mm|\bzoom\b/i.test(lens) && (!flcb.checked || !(+calib.calibrationInfo.focal_length > 0))) {
             errors.push(qsTr("Zoom lenses require a focal length."));
         }
 
@@ -285,6 +285,9 @@ MenuItem {
             }
 
             calib.resetMetadata();
+            flcb.checked = false;
+            fl.value = 0;
+            crop.value = 1;
             if (additional_data.camera_identifier) {
                 const camera_id = additional_data.camera_identifier;
                 if (camera_id) {
@@ -302,7 +305,7 @@ MenuItem {
                     if (camera_id.brand === "GoPro" && camera_id.lens_info === "Hyper") digitalLens.currentIndex = 2;
 
                     // RED KOMODO is global shutter
-                    gs.checked = camera_id.model.startsWith("KOMODO");
+                    gs.checked = (camera_id.model || "").startsWith("KOMODO");
                 }
             }
             if (+additional_data.horizontal_stretch > 0.01) xStretch.value = +additional_data.horizontal_stretch;
@@ -771,6 +774,10 @@ MenuItem {
         CheckBoxWithContent {
             id: flcb;
             text: qsTr("Focal length");
+            onCheckedChanged: {
+                calib.calibrationInfo.focal_length = checked? fl.value : null;
+                calib.calibrationInfo.crop_factor = checked? crop.value : null;
+            }
             Label {
                 text: qsTr("Lens native focal length");
                 position: Label.LeftPosition;

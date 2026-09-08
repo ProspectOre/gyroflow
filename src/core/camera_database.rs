@@ -79,7 +79,7 @@ impl CameraDatabase {
 
     pub fn from_static() -> Self {
         let file = if let Ok(data) = std::fs::read_to_string(Self::get_path()) {
-            match serde_json::from_str::<CameraDatabaseFile>(&data) {
+            match Self::parse_file(&data) {
                 Ok(file) => file,
                 Err(e) => {
                     log::warn!("Failed to load camera database update: {:?}", e);
@@ -99,6 +99,17 @@ impl CameraDatabase {
         }
         db.rebuild_indexes();
         db
+    }
+
+    pub fn parse_file(data: &str) -> Result<CameraDatabaseFile, String> {
+        let file: CameraDatabaseFile = serde_json::from_str(data).map_err(|e| e.to_string())?;
+        if file.version != 1 || file.cameras.is_empty() || file.lenses.is_empty() {
+            return Err("Unsupported or empty camera database".to_owned());
+        }
+        if file.cameras.iter().any(|camera| camera.brand.trim().is_empty() || camera.model.trim().is_empty()) {
+            return Err("Camera database contains an unnamed camera".to_owned());
+        }
+        Ok(file)
     }
 
     fn bundled_file() -> CameraDatabaseFile {
@@ -342,8 +353,8 @@ impl CameraDatabase {
             return Some((key, camera));
         }
 
-        let brand_key = Self::key(brand);
-        let model_key = Self::key(model);
+        let brand_key = Self::key(&Self::camera_brand_name(brand, model));
+        let model_key = Self::key(&Self::model_name(brand, model));
         self.cameras.iter()
             .find(|((candidate_brand, _), camera)| {
                 (candidate_brand == &brand_key || camera.brand_aliases.iter().any(|alias| Self::key(alias) == brand_key)) &&
@@ -380,8 +391,8 @@ impl CameraDatabase {
             (Some(a), Some(b)) if Self::key(a) == Self::key(b) => true,
             (Some(_), Some(_)) => false,
             _ => match (selected.crop_factor, candidate.crop_factor) {
-                (Some(a), Some(b)) => (a - b).abs() <= 0.15,
-                _ => true,
+                (Some(a), Some(b)) => a.is_finite() && b.is_finite() && a > 0.0 && b > 0.0 && (a - b).abs() <= 0.15,
+                _ => false,
             },
         }
     }
@@ -486,6 +497,7 @@ impl CameraDatabase {
 
     fn sensor_size(crop_factor: Option<f64>) -> Option<&'static str> {
         let crop = crop_factor?;
+        if !crop.is_finite() || crop <= 0.0 { return None; }
         let size = if crop <= 1.1 {
             "Full frame"
         } else if crop <= 1.35 {
@@ -532,6 +544,24 @@ impl CameraDatabase {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn rejects_incomplete_or_unsupported_updates() {
+        for data in ["{}", "{\"version\":1}", "{\"version\":2,\"cameras\":[{}],\"lenses\":[{}]}"] {
+            assert!(CameraDatabase::parse_file(data).is_err());
+        }
+        assert!(CameraDatabase::parse_file(CAMERA_DATABASE_JSON).is_ok());
+    }
+
+    #[test]
+    fn unknown_sensor_is_not_a_compatibility_claim() {
+        let known = CameraEntry { crop_factor: Some(1.0), ..Default::default() };
+        assert!(!CameraDatabase::sensor_compatible(&known, &CameraEntry::default()));
+        assert!(!CameraDatabase::sensor_compatible(&CameraEntry::default(), &CameraEntry::default()));
+        for crop in [0.0, -1.0, f64::NAN, f64::INFINITY] {
+            assert!(CameraDatabase::sensor_size(Some(crop)).is_none());
+        }
+    }
 
     #[test]
     fn static_database_loads() {

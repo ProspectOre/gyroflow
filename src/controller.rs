@@ -2059,15 +2059,28 @@ impl Controller {
                                             .and_then(|asset| asset.get("browser_download_url").and_then(|x| x.as_str()))
                                     };
                                     let download_to = |url: &str, path: &std::path::Path| -> bool {
-                                        if let Some(parent) = path.parent() {
-                                            let _ = std::fs::create_dir_all(parent);
-                                        }
-                                        if let Ok(mut content) = ureq::get(url).call().map(|x| x.into_body().into_reader()) {
-                                            if let Ok(mut file) = std::fs::File::create(path) {
-                                                return std::io::copy(&mut content, &mut file).is_ok();
+                                        (|| -> Result<(), Box<dyn std::error::Error>> {
+                                            use std::io::{Read, Seek, SeekFrom, Write};
+                                            let parent = path.parent().ok_or("Missing database directory")?;
+                                            std::fs::create_dir_all(parent)?;
+                                            let mut content = ureq::get(url).call()?.into_body().into_reader();
+                                            let mut file = tempfile::NamedTempFile::new_in(parent)?;
+                                            std::io::copy(&mut content, &mut file)?;
+                                            file.flush()?;
+                                            file.seek(SeekFrom::Start(0))?;
+                                            if path.file_name().and_then(|x| x.to_str()) == Some("camera_database.json") {
+                                                let mut data = String::new();
+                                                file.read_to_string(&mut data)?;
+                                                CameraDatabase::parse_file(&data)?;
+                                            } else {
+                                                // Reading to EOF checks the gzip footer and catches truncated transfers.
+                                                let mut decoder = flate2::read::GzDecoder::new(file.as_file_mut());
+                                                std::io::copy(&mut decoder, &mut std::io::sink())?;
                                             }
-                                        }
-                                        false
+                                            file.as_file().sync_all()?;
+                                            file.persist(path)?;
+                                            Ok(())
+                                        })().map_err(|e| ::log::warn!("Database update failed: {e}")).is_ok()
                                     };
 
                                     if let Some(download_url) = asset_url("profiles.cbor.gz") {
